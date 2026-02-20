@@ -6,24 +6,35 @@
 #pragma comment(lib, "USER32")
 #pragma comment(linker, "/SUBSYSTEM:WINDOWS")
 
-#define KEYDOWN(k) ((k) & 0x80)
+#define KEYDOWN(k) ((k) & 0x8000)
+#define MAX_MONITORS 16
+#define ENABLE_EVENT_LOGGING
 
-// If mouse enters the rectangle, activate hotcorner function
-static RECT kTopLeftHotCorner;
-static RECT kTopRightHotCorner;
+// Monitor info cache
+typedef struct {
+    HMONITOR hMonitor;
+    MONITORINFO info;
+    RECT kTopLeftHotCorner;
+    RECT kTopRightHotCorner;
+} CachedMonitor;
+static CachedMonitor monitorCache[MAX_MONITORS];
+static int monitorCount = 0;
+
+// Per-monitor DPI awareness context
+static const HANDLE kDpiAwarenessContextPerMonitorAwareV2 = (HANDLE)-4;
 
 // Inputs to inject when corner activated
-static const INPUT kVolumeUpInput[] = {
+static INPUT kVolumeUpInput[] = {
     {INPUT_KEYBOARD, .ki = {VK_VOLUME_UP, .dwFlags = 0}},
     {INPUT_KEYBOARD, .ki = {VK_VOLUME_UP, .dwFlags = KEYEVENTF_KEYUP}},
 };
 
-static const INPUT kVolumeDownInput[] = {
+static INPUT kVolumeDownInput[] = {
     {INPUT_KEYBOARD, .ki = {VK_VOLUME_DOWN, .dwFlags = 0}},
     {INPUT_KEYBOARD, .ki = {VK_VOLUME_DOWN, .dwFlags = KEYEVENTF_KEYUP}},
 };
 
-static const INPUT kDesktopLeftInput[] = {
+static INPUT kDesktopLeftInput[] = {
     {INPUT_KEYBOARD, .ki = {VK_CONTROL, .dwFlags = 0}},
     {INPUT_KEYBOARD, .ki = {VK_LWIN, .dwFlags = 0}},
     {INPUT_KEYBOARD, .ki = {VK_LEFT, .dwFlags = 0}},
@@ -32,7 +43,7 @@ static const INPUT kDesktopLeftInput[] = {
     {INPUT_KEYBOARD, .ki = {VK_CONTROL, .dwFlags = KEYEVENTF_KEYUP}},
 };
 
-static const INPUT kDesktopRightInput[] = {
+static INPUT kDesktopRightInput[] = {
     {INPUT_KEYBOARD, .ki = {VK_CONTROL, .dwFlags = 0}},
     {INPUT_KEYBOARD, .ki = {VK_LWIN, .dwFlags = 0}},
     {INPUT_KEYBOARD, .ki = {VK_RIGHT, .dwFlags = 0}},
@@ -41,7 +52,7 @@ static const INPUT kDesktopRightInput[] = {
     {INPUT_KEYBOARD, .ki = {VK_CONTROL, .dwFlags = KEYEVENTF_KEYUP}},
 };
 
-static const INPUT kTaskViewInput[] = {
+static INPUT kTaskViewInput[] = {
     {INPUT_KEYBOARD, .ki = {VK_LWIN, .dwFlags = 0}},
     {INPUT_KEYBOARD, .ki = {VK_TAB, .dwFlags = 0}},
     {INPUT_KEYBOARD, .ki = {VK_TAB, .dwFlags = KEYEVENTF_KEYUP}},
@@ -49,44 +60,111 @@ static const INPUT kTaskViewInput[] = {
 };
 
 // Update corner coordinates with the hotkey CTRL+ALT+F12
-// Useful when resolution or DPI changes
+// Useful when monitor, resolution or DPI changes
 // Quit application with ALT+SHIFT+F12
 static const DWORD kHotKeyModUpdate = MOD_CONTROL | MOD_ALT;
 static const DWORD kHotKeyModQuit = MOD_ALT | MOD_SHIFT;
 static const DWORD kHotKey = VK_F12;
 
-static BOOL NoModifierKeysPressedDown() {
-    BYTE keyState[256];
-    GetKeyState(0);
-    if (GetKeyboardState(keyState)) {
-        return !(KEYDOWN(keyState[VK_SHIFT]) || KEYDOWN(keyState[VK_CONTROL]) || KEYDOWN(keyState[VK_MENU]) ||
-                 KEYDOWN(keyState[VK_LWIN]) || KEYDOWN(keyState[VK_LBUTTON]) || KEYDOWN(keyState[VK_RBUTTON]));
+// Log a message to Windows Event Log
+static void LogEvent(WORD eventType, const char* message) {
+#ifdef ENABLE_EVENT_LOGGING
+    HANDLE hEventLog = RegisterEventSourceA(NULL, "Volumouse");
+    if (hEventLog) {
+        ReportEventA(hEventLog, eventType, 0, 0, NULL, 1, 0, &message, NULL);
+        DeregisterEventSource(hEventLog);
     }
-    return 1;
+#else
+    (void)eventType;
+    (void)message;
+#endif
+}
+
+// Callback invoked once per monitor
+static BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) {
+    (void)hdcMonitor;
+    (void)lprcMonitor;
+    (void)dwData;
+
+    // Stop enumerating if we exceed the cache size
+    if (monitorCount >= MAX_MONITORS) return FALSE;
+
+    CachedMonitor* entry = &monitorCache[monitorCount];
+    entry->hMonitor = hMonitor;
+    entry->info.cbSize = sizeof(MONITORINFO);
+
+    // Calculate hot corners for this monitor
+    if (GetMonitorInfo(hMonitor, &entry->info)) {
+        entry->kTopLeftHotCorner.left = entry->info.rcMonitor.left;
+        entry->kTopLeftHotCorner.top = entry->info.rcMonitor.top;
+        entry->kTopLeftHotCorner.right = entry->info.rcMonitor.left + CORNER_SIZE;
+        entry->kTopLeftHotCorner.bottom = entry->info.rcMonitor.top + CORNER_SIZE;
+
+        entry->kTopRightHotCorner.left = entry->info.rcMonitor.right - CORNER_SIZE;
+        entry->kTopRightHotCorner.top = entry->info.rcMonitor.top;
+        entry->kTopRightHotCorner.right = entry->info.rcMonitor.right;
+        entry->kTopRightHotCorner.bottom = entry->info.rcMonitor.top + CORNER_SIZE;
+
+        // Add to cache only if monitor data was successfully retrieved
+        monitorCount++;
+    }
+
+    return TRUE;
+}
+
+// Cache monitor once at startup (or when update hotkey is pressed)
+static void CacheAllMonitors() {
+    monitorCount = 0;
+    EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, 0);
+    LogEvent(EVENTLOG_INFORMATION_TYPE, "Monitor cache updated");
+}
+
+// Check if point is in the top-left hot corner of any monitor
+static BOOL IsInTopLeftHotCorner(POINT pt) {
+    for (int i = 0; i < monitorCount; i++) {
+        if (PtInRect(&monitorCache[i].kTopLeftHotCorner, pt)) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+// Check if point is in the top-right hot corner of any monitor
+static BOOL IsInTopRightHotCorner(POINT pt) {
+    for (int i = 0; i < monitorCount; i++) {
+        if (PtInRect(&monitorCache[i].kTopRightHotCorner, pt)) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+static BOOL NoModifierKeysPressedDown() {
+    return !(KEYDOWN(GetAsyncKeyState(VK_SHIFT)) || KEYDOWN(GetAsyncKeyState(VK_CONTROL)) ||
+             KEYDOWN(GetAsyncKeyState(VK_MENU)) || KEYDOWN(GetAsyncKeyState(VK_LWIN)) ||
+             KEYDOWN(GetAsyncKeyState(VK_LBUTTON)) || KEYDOWN(GetAsyncKeyState(VK_RBUTTON)));
 }
 
 static LRESULT HandleMouseWheelEvent(int nCode, WPARAM wParam, LPARAM lParam) {
-    MSLLHOOKSTRUCT *evt = (MSLLHOOKSTRUCT *)lParam;
+    MSLLHOOKSTRUCT* evt = (MSLLHOOKSTRUCT*)lParam;
     short wheelDelta = HIWORD(evt->mouseData);
 
-    if (NoModifierKeysPressedDown()) {
-        if (PtInRect(&kTopLeftHotCorner, evt->pt)) {
-            if (wheelDelta > 0) {
-                SendInput(_countof(kVolumeUpInput), kVolumeUpInput, sizeof(INPUT));
-            } else {
-                SendInput(_countof(kVolumeDownInput), kVolumeDownInput, sizeof(INPUT));
-            }
-            // Prevents the event from being handled by the application underneath
-            return 1;
+    if (IsInTopLeftHotCorner(evt->pt) && NoModifierKeysPressedDown()) {
+        if (wheelDelta > 0) {
+            SendInput(_countof(kVolumeUpInput), kVolumeUpInput, sizeof(INPUT));
+        } else {
+            SendInput(_countof(kVolumeDownInput), kVolumeDownInput, sizeof(INPUT));
         }
-        if (PtInRect(&kTopRightHotCorner, evt->pt)) {
-            if (wheelDelta > 0) {
-                SendInput(_countof(kDesktopLeftInput), kDesktopLeftInput, sizeof(INPUT));
-            } else {
-                SendInput(_countof(kDesktopRightInput), kDesktopRightInput, sizeof(INPUT));
-            }
-            return 1;
+        // Prevents the event from being handled by the application underneath
+        return 1;
+    }
+    if (IsInTopRightHotCorner(evt->pt) && NoModifierKeysPressedDown()) {
+        if (wheelDelta > 0) {
+            SendInput(_countof(kDesktopLeftInput), kDesktopLeftInput, sizeof(INPUT));
+        } else {
+            SendInput(_countof(kDesktopRightInput), kDesktopRightInput, sizeof(INPUT));
         }
+        return 1;
     }
 
     // Pass the event to be handled by the next application in the chain
@@ -94,9 +172,9 @@ static LRESULT HandleMouseWheelEvent(int nCode, WPARAM wParam, LPARAM lParam) {
 }
 
 static LRESULT HandleMiddleButtonUpEvent(int nCode, WPARAM wParam, LPARAM lParam) {
-    MSLLHOOKSTRUCT *evt = (MSLLHOOKSTRUCT *)lParam;
+    MSLLHOOKSTRUCT* evt = (MSLLHOOKSTRUCT*)lParam;
 
-    if (PtInRect(&kTopLeftHotCorner, evt->pt) && NoModifierKeysPressedDown()) {
+    if (IsInTopLeftHotCorner(evt->pt) && NoModifierKeysPressedDown()) {
         SendInput(_countof(kTaskViewInput), kTaskViewInput, sizeof(INPUT));
         return 1;
     }
@@ -115,28 +193,66 @@ static LRESULT CALLBACK MouseHookCallback(int nCode, WPARAM wParam, LPARAM lPara
     return CallNextHookEx(NULL, nCode, wParam, lParam);
 }
 
-// Get coordinates for corners on the main screen
-static void UpdateCorners() {
-    int screenResX = GetSystemMetrics(SM_CXSCREEN);
-    kTopLeftHotCorner.left = -CORNER_SIZE;
-    kTopLeftHotCorner.top = -CORNER_SIZE;
-    kTopLeftHotCorner.right = +CORNER_SIZE;
-    kTopLeftHotCorner.bottom = +CORNER_SIZE;
-    kTopRightHotCorner.left = screenResX - CORNER_SIZE;
-    kTopRightHotCorner.top = -CORNER_SIZE;
-    kTopRightHotCorner.right = screenResX + CORNER_SIZE;
-    kTopRightHotCorner.bottom = +CORNER_SIZE;
+// Window procedure for hidden window
+static LRESULT CALLBACK MessageWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    if (uMsg == WM_DISPLAYCHANGE) {
+        LogEvent(EVENTLOG_INFORMATION_TYPE, "Monitor, resolution or DPI change detected");
+        CacheAllMonitors();
+        return 0;
+    }
+    return DefWindowProcA(hwnd, uMsg, wParam, lParam);
+}
+
+// Enable per-monitor DPI awareness if available
+static void EnableDPIAwareness() {
+    // Try to load user32.dll for SetProcessDpiAwarenessContext (Windows 10 1703+)
+    // MinGW missing headers for static linking
+    HMODULE user32 = GetModuleHandleA("user32.dll");
+    if (user32) {
+        typedef BOOL(WINAPI * SetProcessDpiAwarenessContextFunc)(HANDLE);
+        SetProcessDpiAwarenessContextFunc pSetProcessDpiAwarenessContext =
+            (SetProcessDpiAwarenessContextFunc)GetProcAddress(user32, "SetProcessDpiAwarenessContext");
+
+        if (pSetProcessDpiAwarenessContext) {
+            pSetProcessDpiAwarenessContext(kDpiAwarenessContextPerMonitorAwareV2);
+            return;
+        }
+    }
+
+    // Fallback to older API (Windows Vista)
+    // All monitors will be treated as the same DPI
+    LogEvent(EVENTLOG_WARNING_TYPE,
+             "Using fallback DPI awareness mode (SetProcessDPIAware). "
+             "This application requires Windows 10 1703+ or later for full DPI awareness support. "
+             "Some corners might not be detected correctly when using multiple monitors with different DPI scales.");
+    SetProcessDPIAware();
 }
 
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     MSG Msg;
     HHOOK MouseHook;
+    WNDCLASSA wc = {0};
+    HWND hwnd;
 
     SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
-    SetProcessDPIAware();
-    UpdateCorners();
+    EnableDPIAwareness();
+    CacheAllMonitors();
 
+    // Register and create hidden window for monitor/resolution change detection
+    wc.lpfnWndProc = MessageWindowProc;
+    wc.hInstance = hInstance;
+    wc.lpszClassName = "HotCornerMsgWnd";
+    RegisterClassA(&wc);
+    hwnd = CreateWindowExA(0, "HotCornerMsgWnd", "Volumouse", 0, 0, 0, 0, 0, NULL, NULL, hInstance, NULL);
+    if (!hwnd) {
+        LogEvent(EVENTLOG_ERROR_TYPE, "Failed to create message window");
+        return 1;
+    }
+
+    // Detect mouse events globally with a low-level hook
     if (!(MouseHook = SetWindowsHookEx(WH_MOUSE_LL, MouseHookCallback, NULL, 0))) {
+        LogEvent(EVENTLOG_ERROR_TYPE, "Failed to install mouse hook");
+        DestroyWindow(hwnd);
         return 1;
     }
 
@@ -145,11 +261,12 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     while (GetMessage(&Msg, NULL, 0, 0)) {
         if (Msg.message == WM_HOTKEY) {
             if (LOWORD(Msg.lParam) == kHotKeyModQuit) break;
-            if (LOWORD(Msg.lParam) == kHotKeyModUpdate) UpdateCorners();
+            if (LOWORD(Msg.lParam) == kHotKeyModUpdate) CacheAllMonitors();
         }
         DispatchMessage(&Msg);
     }
 
     UnhookWindowsHookEx(MouseHook);
+    DestroyWindow(hwnd);
     return Msg.wParam;
 }
