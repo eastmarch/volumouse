@@ -59,7 +59,6 @@ static INPUT kTaskViewInput[] = {
 };
 
 // Update corner coordinates with the hotkey CTRL+ALT+F12
-// Useful when monitor, resolution or DPI changes
 // Quit application with ALT+SHIFT+F12
 static const DWORD kHotKeyModUpdate = MOD_CONTROL | MOD_ALT;
 static const DWORD kHotKeyModQuit = MOD_ALT | MOD_SHIFT;
@@ -68,7 +67,7 @@ static const DWORD kHotKey = VK_F12;
 // Log a message to Windows Event Log
 static void LogEvent(WORD eventType, const char* message) {
 #ifdef EVENT_DEBUG
-    #pragma message("EVENT_DEBUG is enabled")
+#pragma message("EVENT_DEBUG is enabled")
     HANDLE hEventLog = RegisterEventSourceA(NULL, "Volumouse");
     if (hEventLog) {
         ReportEventA(hEventLog, eventType, 0, 0, NULL, 1, 0, &message, NULL);
@@ -112,7 +111,7 @@ static BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT l
     return TRUE;
 }
 
-// Cache monitor corner data when triggered
+// Cache monitor corner data
 static void CacheAllMonitors() {
     monitorCount = 0;
     EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, 0);
@@ -141,8 +140,8 @@ static BOOL IsInTopRightHotCorner(POINT pt) {
 
 static BOOL NoModifierKeysPressedDown() {
     return !(KEYDOWN(GetAsyncKeyState(VK_SHIFT)) || KEYDOWN(GetAsyncKeyState(VK_CONTROL)) ||
-             KEYDOWN(GetAsyncKeyState(VK_MENU)) || KEYDOWN(GetAsyncKeyState(VK_LWIN)) ||
-             KEYDOWN(GetAsyncKeyState(VK_LBUTTON)) || KEYDOWN(GetAsyncKeyState(VK_RBUTTON)));
+             KEYDOWN(GetAsyncKeyState(VK_LWIN)) || KEYDOWN(GetAsyncKeyState(VK_LBUTTON)) ||
+             KEYDOWN(GetAsyncKeyState(VK_RBUTTON)));
 }
 
 static LRESULT HandleMouseWheelEvent(int nCode, WPARAM wParam, LPARAM lParam) {
@@ -193,7 +192,7 @@ static LRESULT CALLBACK MouseHookCallback(int nCode, WPARAM wParam, LPARAM lPara
     return CallNextHookEx(NULL, nCode, wParam, lParam);
 }
 
-// Window procedure for hidden window
+// Message handler for hidden window
 static LRESULT CALLBACK MessageWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     if (uMsg == WM_DISPLAYCHANGE) {
         LogEvent(EVENTLOG_INFORMATION_TYPE, "Monitor, resolution or DPI change detected");
@@ -212,7 +211,6 @@ static void EnableDPIAwareness() {
         typedef BOOL(WINAPI * SetProcessDpiAwarenessContextFunc)(HANDLE);
         SetProcessDpiAwarenessContextFunc pSetProcessDpiAwarenessContext =
             (SetProcessDpiAwarenessContextFunc)GetProcAddress(user32, "SetProcessDpiAwarenessContext");
-
         if (pSetProcessDpiAwarenessContext) {
             pSetProcessDpiAwarenessContext(kDpiAwarenessContextPerMonitorAwareV2);
             return;
@@ -256,6 +254,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
         return 1;
     }
 
+    // Message loop to keep the application running and process hotkeys
     RegisterHotKey(NULL, 1, kHotKeyModQuit, kHotKey);
     RegisterHotKey(NULL, 2, kHotKeyModUpdate, kHotKey);
     while (GetMessage(&Msg, NULL, 0, 0)) {
