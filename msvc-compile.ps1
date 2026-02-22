@@ -58,10 +58,10 @@ if ($LASTEXITCODE -ne 0) {
 # Step 3: Compile executable
 if ($debug) {
     Write-Host "Building in debug mode..." -ForegroundColor Yellow
-    & cl.exe /W4 /O2 /DEVENT_DEBUG hotcorner.c version.res /link advapi32.lib /out:"$outputPath"
+    & cl.exe /W4 /DEVENT_DEBUG hotcorner.c version.res /link advapi32.lib /out:"$outputPath"
 } else {
     Write-Host "Building in release mode..." -ForegroundColor Yellow
-    & cl.exe /W4 /O2 hotcorner.c version.res /out:"$outputPath"
+    & cl.exe /W4 /O2 /GL /arch:AVX2 hotcorner.c version.res /link /LTCG /out:"$outputPath"
 }
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Compilation failed" -ForegroundColor Red
