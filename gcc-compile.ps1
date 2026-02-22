@@ -5,35 +5,27 @@ $ErrorActionPreference = "Stop"
 
 # Paths
 $debug = ($args -contains "-debug")
-$visualStudioVars = "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat"
+$msys2Bin = "D:\Tools\msys64\ucrt64\bin"
 $buildDir = ".\build"
-$outputName = "volumouse-msvc"
+$outputName = "volumouse-gcc"
 $outputPath = "$buildDir\$outputName.exe"
 
-# Validate Visual Studio installation
-if (-not (Test-Path $visualStudioVars)) {
-    Write-Host "ERROR: Visual Studio installation not found at `"$visualStudioVars`"" -ForegroundColor Red
-    Write-Host "Please ensure Visual Studio 2022 Community Edition is installed." -ForegroundColor Red
+# Validate GCC/MSYS2 installation
+if (-not (Test-Path $msys2Bin)) {
+    Write-Host "ERROR: MSYS2 installation not found at `"$msys2Bin`"" -ForegroundColor Red
+    Write-Host "Please ensure MSYS2 path is correct." -ForegroundColor Red
     exit 1
 }
 
-# Add MSVC to PATH temporarily
-Write-Host "Setting up MSVC environment..." -ForegroundColor Yellow
-try {
-    cmd /c "`"$visualStudioVars`" x64 & set" | ForEach-Object {
-        if ($_ -match '^([^=]*)=(.*)$') {
-            [Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
-        }
-    }
-    
-    $clExePath = Get-Command cl.exe -ErrorAction SilentlyContinue
-    if (-not $clExePath) {
-        Write-Host "ERROR: Failed to set up MSVC environment: cl.exe not found in PATH" -ForegroundColor Red
-        exit 1
-    }
-}
-catch {
-    Write-Host "ERROR: Failed to set up MSVC environment: $_" -ForegroundColor Red
+# Add MSYS2 to PATH temporarily
+Write-Host "Setting up MSYS2 environment..." -ForegroundColor Yellow
+$env:PATH = "$msys2Bin;$env:PATH"
+$gccPath = Get-Command gcc.exe -ErrorAction SilentlyContinue
+$windresPath = Get-Command windres.exe -ErrorAction SilentlyContinue
+if (-not $gccPath || -not $windresPath) {
+    Write-Host "ERROR: Failed to find gcc.exe or windres.exe" -ForegroundColor Red
+    Write-Host "Please ensure the following command was executed inside MSYS2 shell:" -ForegroundColor Red
+    Write-Host "`"pacman -S --needed base-devel mingw-w64-ucrt-x86_64-toolchain`"" -ForegroundColor Red
     exit 1
 }
 
@@ -49,7 +41,7 @@ Stop-Process -Name "$outputName" -ErrorAction SilentlyContinue
 
 # Step 2: Compile version resource
 Write-Host "Compiling version resource..." -ForegroundColor Yellow
-& rc.exe version.rc
+& windres.exe version.rc -O coff -o version.res
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Failed to compile version resource" -ForegroundColor Red
     exit 1
@@ -58,16 +50,16 @@ if ($LASTEXITCODE -ne 0) {
 # Step 3: Compile executable
 if ($debug) {
     Write-Host "Building in debug mode..." -ForegroundColor Yellow
-    & cl.exe /W4 /O2 /DEVENT_DEBUG hotcorner.c version.res /link advapi32.lib /out:"$outputPath"
+    & gcc.exe -Wall -g -O0 -DEVENT_DEBUG hotcorner.c version.res -ladvapi32 -o $outputPath "-Wl,-subsystem,windows"
 } else {
     Write-Host "Building in release mode..." -ForegroundColor Yellow
-    & cl.exe /W4 /O2 hotcorner.c version.res /out:"$outputPath"
+    & gcc.exe -Wall -O2 hotcorner.c version.res -o $outputPath "-Wl,-subsystem,windows"
 }
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Compilation failed" -ForegroundColor Red
     exit 1
 }
-Remove-Item *.obj -ErrorAction SilentlyContinue
+Remove-Item *.o -ErrorAction SilentlyContinue
 Remove-Item *.res -ErrorAction SilentlyContinue
 
 
@@ -82,8 +74,7 @@ if (Test-Path $outputPath) {
     Write-Host "`nStarting application..." -ForegroundColor Yellow
     Start-Process -FilePath $outputPath
     Write-Host "Application started!" -ForegroundColor Green
-}
-else {
+} else {
     Write-Host "ERROR: Output executable not found at `"$outputPath`"" -ForegroundColor Red
     exit 1
 }
