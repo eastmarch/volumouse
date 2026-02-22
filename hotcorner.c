@@ -1,14 +1,13 @@
 #define WIN32_LEAN_AND_MEAN
 #define CORNER_SIZE 20
+#define KEYDOWN(k) ((k) & 0x8000)
+#define MAX_MONITORS 16
+
 #include <stdlib.h>
 #include <windows.h>
 
 #pragma comment(lib, "USER32")
 #pragma comment(linker, "/SUBSYSTEM:WINDOWS")
-
-#define KEYDOWN(k) ((k) & 0x8000)
-#define MAX_MONITORS 16
-#define ENABLE_EVENT_LOGGING
 
 // Monitor info cache
 typedef struct {
@@ -68,7 +67,8 @@ static const DWORD kHotKey = VK_F12;
 
 // Log a message to Windows Event Log
 static void LogEvent(WORD eventType, const char* message) {
-#ifdef ENABLE_EVENT_LOGGING
+#ifdef EVENT_DEBUG
+    #pragma message("EVENT_DEBUG is enabled")
     HANDLE hEventLog = RegisterEventSourceA(NULL, "Volumouse");
     if (hEventLog) {
         ReportEventA(hEventLog, eventType, 0, 0, NULL, 1, 0, &message, NULL);
@@ -112,7 +112,7 @@ static BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT l
     return TRUE;
 }
 
-// Cache monitor once at startup (or when update hotkey is pressed)
+// Cache monitor corner data when triggered
 static void CacheAllMonitors() {
     monitorCount = 0;
     EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, 0);
