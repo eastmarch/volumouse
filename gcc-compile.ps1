@@ -52,7 +52,7 @@ if ($debug) {
     Write-Host "Building in debug mode..." -ForegroundColor Yellow
     & gcc.exe -Wall -DEVENT_DEBUG hotcorner.c version.res -ladvapi32 -o $outputPath "-Wl,-subsystem,windows"
 } else {
-    Write-Host "Building in release mode with performance flags..." -ForegroundColor Yellow
+    Write-Host "Building in release mode..." -ForegroundColor Yellow
     & gcc.exe -Wall -O3 -march=native -flto -fdata-sections -ffunction-sections -fomit-frame-pointer hotcorner.c version.res -o $outputPath "-Wl,-subsystem,windows" "-Wl,--gc-sections" -s
 }
 if ($LASTEXITCODE -ne 0) {

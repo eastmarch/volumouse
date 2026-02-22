@@ -85,14 +85,14 @@ static BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT l
     (void)lprcMonitor;
     (void)dwData;
 
-    // Stop enumerating if we exceed the cache size
+    // Stop enumerating if it reaches the maximum cache size
     if (monitorCount >= MAX_MONITORS) return FALSE;
 
     CachedMonitor* entry = &monitorCache[monitorCount];
     entry->hMonitor = hMonitor;
     entry->info.cbSize = sizeof(MONITORINFO);
 
-    // Calculate hot corners for this monitor
+    // Calculate hot corners
     if (GetMonitorInfo(hMonitor, &entry->info)) {
         entry->kTopLeftHotCorner.left = entry->info.rcMonitor.left;
         entry->kTopLeftHotCorner.top = entry->info.rcMonitor.top;
@@ -104,20 +104,20 @@ static BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT l
         entry->kTopRightHotCorner.right = entry->info.rcMonitor.right;
         entry->kTopRightHotCorner.bottom = entry->info.rcMonitor.top + CORNER_SIZE;
 
-        // Add to cache only if monitor data was successfully retrieved
         monitorCount++;
     }
 
     return TRUE;
 }
 
-// Cache monitor corner data
+// Cache hot corner coordinates for connected monitors
 static void CacheAllMonitors() {
     monitorCount = 0;
     EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, 0);
     LogEvent(EVENTLOG_INFORMATION_TYPE, "Monitor cache updated");
 }
 
+// Check for modifier keys before processing input
 static inline BOOL NoModifierKeysPressedDown() {
     return !(KEYDOWN(GetAsyncKeyState(VK_SHIFT)) || KEYDOWN(GetAsyncKeyState(VK_CONTROL)) ||
              KEYDOWN(GetAsyncKeyState(VK_LWIN)) || KEYDOWN(GetAsyncKeyState(VK_LBUTTON)) ||
