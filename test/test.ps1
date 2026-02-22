@@ -4,13 +4,9 @@
 $ErrorActionPreference = "Stop"
 
 # Paths
-$msys2Bin = "C:\msys64\ucrt64\bin"
+$msys2Bin = "D:\Tools\msys64\ucrt64\bin"
 $buildDir = ".\build"
 $outputExe = "$buildDir\test.exe"
-
-# Add MSYS2 to PATH temporarily
-$env:PATH = "$msys2Bin;$env:PATH"
-
 # Create build directory if it doesn't exist
 if (-not (Test-Path $buildDir)) {
     New-Item -ItemType Directory -Path $buildDir | Out-Null
@@ -19,7 +15,7 @@ if (-not (Test-Path $buildDir)) {
 
 # Step 1: Compile executable
 Write-Host "Compiling executable..." -ForegroundColor Yellow
-& "$msys2Bin\gcc.exe" -O2 test.c -o $outputExe -lgdi32 "-Wl,-subsystem,console"
+& "$msys2Bin\gcc.exe" -O2 .\test\test.c -o $outputExe -lgdi32 "-Wl,-subsystem,console"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Compilation failed" -ForegroundColor Red
     exit 1

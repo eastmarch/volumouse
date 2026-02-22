@@ -77,7 +77,7 @@ int main(void) {
     PrintCachedMonitors();
 
     /* Loop that reads any key pressed */
-    printf("Press any key to get cursor position (press 'q' to quit):\n");
+    printf("Press enter key to get cursor position (press 'q' to quit):\n");
     while (1) {
         int ch = getchar();
         if (ch == 'q' || ch == 'Q') break;
