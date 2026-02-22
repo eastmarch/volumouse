@@ -118,30 +118,34 @@ static void CacheAllMonitors() {
     LogEvent(EVENTLOG_INFORMATION_TYPE, "Monitor cache updated");
 }
 
-// Check if point is in the top-left hot corner of any monitor
-static BOOL IsInTopLeftHotCorner(POINT pt) {
-    for (int i = 0; i < monitorCount; i++) {
-        if (PtInRect(&monitorCache[i].kTopLeftHotCorner, pt)) {
-            return TRUE;
-        }
-    }
-    return FALSE;
-}
-
-// Check if point is in the top-right hot corner of any monitor
-static BOOL IsInTopRightHotCorner(POINT pt) {
-    for (int i = 0; i < monitorCount; i++) {
-        if (PtInRect(&monitorCache[i].kTopRightHotCorner, pt)) {
-            return TRUE;
-        }
-    }
-    return FALSE;
-}
-
-static BOOL NoModifierKeysPressedDown() {
+static inline BOOL NoModifierKeysPressedDown() {
     return !(KEYDOWN(GetAsyncKeyState(VK_SHIFT)) || KEYDOWN(GetAsyncKeyState(VK_CONTROL)) ||
              KEYDOWN(GetAsyncKeyState(VK_LWIN)) || KEYDOWN(GetAsyncKeyState(VK_LBUTTON)) ||
              KEYDOWN(GetAsyncKeyState(VK_RBUTTON)));
+}
+
+// Find cached monitor index for a given point
+static inline int FindMonitorIndexFromPoint(POINT pt) {
+    HMONITOR hm = MonitorFromPoint(pt, MONITOR_DEFAULTTONULL);
+    if (!hm) return -1;
+    for (int i = 0; i < monitorCount; ++i) {
+        if (monitorCache[i].hMonitor == hm) return i;
+    }
+    return -1;
+}
+
+// Check if point is in the top-left hot corner of the current monitor
+static inline BOOL IsInTopLeftHotCorner(POINT pt) {
+    int idx = FindMonitorIndexFromPoint(pt);
+    if (idx < 0) return FALSE;
+    return PtInRect(&monitorCache[idx].kTopLeftHotCorner, pt);
+}
+
+// Check if point is in the top-right hot corner of the current monitor
+static inline BOOL IsInTopRightHotCorner(POINT pt) {
+    int idx = FindMonitorIndexFromPoint(pt);
+    if (idx < 0) return FALSE;
+    return PtInRect(&monitorCache[idx].kTopRightHotCorner, pt);
 }
 
 static LRESULT HandleMouseWheelEvent(int nCode, WPARAM wParam, LPARAM lParam) {
