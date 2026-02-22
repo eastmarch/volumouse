@@ -19,9 +19,6 @@ typedef struct {
 static CachedMonitor monitorCache[MAX_MONITORS];
 static int monitorCount = 0;
 
-// Per-monitor DPI awareness context
-static const HANDLE kDpiAwarenessContextPerMonitorAwareV2 = (HANDLE)-4;
-
 // Inputs to inject when corner activated
 static INPUT kVolumeUpInput[] = {
     {INPUT_KEYBOARD, .ki = {VK_VOLUME_UP, .dwFlags = 0}},
@@ -134,25 +131,22 @@ static inline int FindMonitorIndexFromPoint(POINT pt) {
     return -1;
 }
 
-// Check if point is in the top-left hot corner of the current monitor
-static inline BOOL IsInTopLeftHotCorner(POINT pt) {
-    int idx = FindMonitorIndexFromPoint(pt);
-    if (idx < 0) return FALSE;
-    return PtInRect(&monitorCache[idx].kTopLeftHotCorner, pt);
+static inline BOOL IsInTopLeftHotCorner(POINT pt, int monitorIdx) {
+    if (monitorIdx < 0 || monitorIdx >= monitorCount) return FALSE;
+    return PtInRect(&monitorCache[monitorIdx].kTopLeftHotCorner, pt);
 }
 
-// Check if point is in the top-right hot corner of the current monitor
-static inline BOOL IsInTopRightHotCorner(POINT pt) {
-    int idx = FindMonitorIndexFromPoint(pt);
-    if (idx < 0) return FALSE;
-    return PtInRect(&monitorCache[idx].kTopRightHotCorner, pt);
+static inline BOOL IsInTopRightHotCorner(POINT pt, int monitorIdx) {
+    if (monitorIdx < 0 || monitorIdx >= monitorCount) return FALSE;
+    return PtInRect(&monitorCache[monitorIdx].kTopRightHotCorner, pt);
 }
 
 static LRESULT HandleMouseWheelEvent(int nCode, WPARAM wParam, LPARAM lParam) {
     MSLLHOOKSTRUCT* evt = (MSLLHOOKSTRUCT*)lParam;
     short wheelDelta = HIWORD(evt->mouseData);
+    int monitorIdx = FindMonitorIndexFromPoint(evt->pt);
 
-    if (IsInTopLeftHotCorner(evt->pt) && NoModifierKeysPressedDown()) {
+    if (IsInTopLeftHotCorner(evt->pt, monitorIdx) && NoModifierKeysPressedDown()) {
         if (wheelDelta > 0) {
             SendInput(_countof(kVolumeUpInput), kVolumeUpInput, sizeof(INPUT));
         } else {
@@ -161,7 +155,7 @@ static LRESULT HandleMouseWheelEvent(int nCode, WPARAM wParam, LPARAM lParam) {
         // Prevents the event from being handled by the application underneath
         return 1;
     }
-    if (IsInTopRightHotCorner(evt->pt) && NoModifierKeysPressedDown()) {
+    if (IsInTopRightHotCorner(evt->pt, monitorIdx) && NoModifierKeysPressedDown()) {
         if (wheelDelta > 0) {
             SendInput(_countof(kDesktopLeftInput), kDesktopLeftInput, sizeof(INPUT));
         } else {
@@ -176,8 +170,9 @@ static LRESULT HandleMouseWheelEvent(int nCode, WPARAM wParam, LPARAM lParam) {
 
 static LRESULT HandleMiddleButtonUpEvent(int nCode, WPARAM wParam, LPARAM lParam) {
     MSLLHOOKSTRUCT* evt = (MSLLHOOKSTRUCT*)lParam;
+    int monitorIdx = FindMonitorIndexFromPoint(evt->pt);
 
-    if (IsInTopLeftHotCorner(evt->pt) && NoModifierKeysPressedDown()) {
+    if (IsInTopLeftHotCorner(evt->pt, monitorIdx) && NoModifierKeysPressedDown()) {
         SendInput(_countof(kTaskViewInput), kTaskViewInput, sizeof(INPUT));
         return 1;
     }
@@ -210,6 +205,7 @@ static LRESULT CALLBACK MessageWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, L
 static void EnableDPIAwareness() {
     // Try to load user32.dll for SetProcessDpiAwarenessContext (Windows 10 1703+)
     // MinGW missing headers for static linking
+    const HANDLE kDpiAwarenessContextPerMonitorAwareV2 = (HANDLE)-4;
     HMODULE user32 = GetModuleHandleA("user32.dll");
     if (user32) {
         typedef BOOL(WINAPI * SetProcessDpiAwarenessContextFunc)(HANDLE);
