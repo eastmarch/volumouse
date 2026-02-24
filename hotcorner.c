@@ -168,7 +168,7 @@ static LRESULT HandleMouseWheelEvent(int nCode, WPARAM wParam, LPARAM lParam) {
     return CallNextHookEx(NULL, nCode, wParam, lParam);
 }
 
-static LRESULT HandleMiddleButtonUpEvent(int nCode, WPARAM wParam, LPARAM lParam) {
+static LRESULT HandleMiddleButtonEvent(int nCode, WPARAM wParam, LPARAM lParam) {
     MSLLHOOKSTRUCT* evt = (MSLLHOOKSTRUCT*)lParam;
     int monitorIdx = FindMonitorIndexFromPoint(evt->pt);
 
@@ -182,13 +182,14 @@ static LRESULT HandleMiddleButtonUpEvent(int nCode, WPARAM wParam, LPARAM lParam
 
 // Mouse event handler
 static LRESULT CALLBACK MouseHookCallback(int nCode, WPARAM wParam, LPARAM lParam) {
-    if (wParam == WM_MBUTTONDOWN) {
-        return HandleMiddleButtonUpEvent(nCode, wParam, lParam);
+    switch (wParam) {
+        case WM_MBUTTONDOWN:
+            return HandleMiddleButtonEvent(nCode, wParam, lParam);
+        case WM_MOUSEWHEEL:
+            return HandleMouseWheelEvent(nCode, wParam, lParam);
+        default:
+            return CallNextHookEx(NULL, nCode, wParam, lParam);
     }
-    if (wParam == WM_MOUSEWHEEL) {
-        return HandleMouseWheelEvent(nCode, wParam, lParam);
-    }
-    return CallNextHookEx(NULL, nCode, wParam, lParam);
 }
 
 // Message handler for hidden window
