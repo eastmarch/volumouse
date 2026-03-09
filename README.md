@@ -12,4 +12,14 @@ Mouse middle click:
  * `CTRL+ALT+F12`: force update corner coordinates
 
 ### Details
-This program only works on the main monitor. Any corner besides top-left needs to be calculated in relation to the screen resolution. To address that without adding more event listeners for resolution and DPI changes. The "force update" hotkey was made available.
+This program now supports multiple monitors and listens for resolution, DPI and monitor changes. A "force update" hotkey is also available to re-check the corners coordinates manually.
+
+### How to run on startup
+
+ * Open Task Scheduler
+ * On the menu bar, click on `Action` > `Import Task...`
+ * Select `Volumouse.xml` from the release download
+ * Go to the `Actions` tab and change the executable path
+ * Confirm to save the new task
+ * Log out or restart to check if it worked
+
